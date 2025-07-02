@@ -61,7 +61,7 @@ services:
     depends_on:
       - ticket_worker
       - database
-    command: celery -A worker.inference worker -P threads --loglevel=INFO --queues=inference_queue
+    command: /bin/sh -c "sleep 10 && celery -A worker.inference worker -P threads --loglevel=INFO --queues=inference_queue"
 
   api:
     build: ./src/api

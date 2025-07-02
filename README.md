@@ -27,6 +27,11 @@ Also needs `make` in order to execute make commands (make acts like an orchestra
 
 Ensure to have installed the prerequisites in your local environment.
 
+### Optional.
+
+Docker-desktop. I know that is not as stable like using the CLI, but I'm pro GUI (graphic interfaces), so helps a lot.
+
+----------------------
 
 ### Build
 
@@ -67,34 +72,34 @@ The complete flow you can check in the next diagrams:
 ```mermaid
 graph TD
     subgraph API FastAPI
-        A1[POST /requests\n(new ticket)] --> C1[send_task:\nprocess_new_ticket]
-        A2[POST /seed] --> C2[send_task:\nseed_database]
-        A3[POST /process-tickets] --> C3[send_task:\nprocess_existing_ticket]
-        A4[GET /requests/{id}] --> C4[send_task:\nfetch_record]
-        A5[GET /requests?category=...] --> C5[send_task:\nfilter_by_category]
-        A6[GET /status/{task_id}] --> C6[AsyncResult lookup]
+        A1["POST /requests<br/>(new ticket)"] --> C1["send_task:<br/>process_new_ticket"]
+        A2["POST /seed"] --> C2["send_task:<br/>seed_database"]
+        A3["POST /process-tickets"] --> C3["send_task:<br/>process_existing_ticket"]
+        A4["GET /requests/{id}"] --> C4["send_task:<br/>fetch_record"]
+        A5["GET /requests?category=..."] --> C5["send_task:<br/>filter_by_category"]
+        A6["GET /status/{task_id}"] --> C6["AsyncResult lookup"]
     end
 
     subgraph Celery Broker (RabbitMQ)
-        C1 --> Q1[ticket_queue]
+        C1 --> Q1["ticket_queue"]
         C2 --> Q1
         C3 --> Q1
         C4 --> Q1
         C5 --> Q1
-        C7[send_task:\nrun_inference] --> Q2[inference_queue]
+        C7["send_task:<br/>run_inference"] --> Q2["inference_queue"]
     end
 
     subgraph Worker ticket_worker
-        Q1 --> W1[process_new_ticket]
-        Q1 --> W2[seed_database]
-        Q1 --> W3[process_existing_ticket]
-        Q1 --> W4[fetch_record]
-        Q1 --> W5[filter_by_category]
+        Q1 --> W1["process_new_ticket"]
+        Q1 --> W2["seed_database"]
+        Q1 --> W3["process_existing_ticket"]
+        Q1 --> W4["fetch_record"]
+        Q1 --> W5["filter_by_category"]
         W1 --> C7
     end
 
     subgraph Worker inference_worker
-        Q2 --> W6[run_inference]
+        Q2 --> W6["run_inference"]
         W6 --> DB1[(PostgreSQL)]
     end
 
@@ -108,6 +113,51 @@ graph TD
     style Worker inference_worker fill:#fce4ec,stroke:#c2185b
     style Database fill:#ede7f6,stroke:#512da8
 
+```
+
+```mermaid
+graph LR
+    A[Cliente] -->|POST /requests| B[FastAPI]
+    B -->|Mensaje: ticket_data| C[RabbitMQ<br>Cola 1: raw_tickets]
+    C --> D[Celery Worker I/O]
+    D -->|1. Guardar en DB| E[(PostgreSQL)]
+    D -->|2. Preparar datos| F[RabbitMQ<br>Cola 2: inference_queue]
+    F --> G[Celery Worker Inferencia]
+    G -->|3. Clasificar| H[Modelo ML]
+    H -->|4. Resultados| E
+```
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant FastAPI
+    participant RabbitMQ
+    participant CeleryIO as Celery Worker I/O
+    participant PostgreSQL
+    participant CeleryInf as Celery Worker Inferencia
+    participant ModeloML
+    
+    Cliente->>FastAPI: POST /requests {ticket_data}
+    activate FastAPI
+    FastAPI->>FastAPI: Validar payload (Pydantic)
+    FastAPI->>PostgreSQL: INSERT ticket (status=unprocessed)
+    FastAPI->>RabbitMQ: publish(ticket_id) [queue: processing_queue]
+    deactivate FastAPI
+    FastAPI-->>Cliente: 202 Accepted + ticket_id
+    
+    RabbitMQ->>CeleryIO: consume(ticket_id) [from processing_queue]
+    activate CeleryIO
+    CeleryIO->>PostgreSQL: SELECT ticket_data
+    CeleryIO->>CeleryIO: Preparar input: text = subject + body
+    CeleryIO->>RabbitMQ: publish(inference_task) [queue: inference_queue]
+    deactivate CeleryIO
+    
+    RabbitMQ->>CeleryInf: consume(inference_task) [from inference_queue]
+    activate CeleryInf
+    CeleryInf->>ModeloML: classify(text)
+    ModeloML-->>CeleryInf: {category, confidence}
+    CeleryInf->>PostgreSQL: UPDATE SET category, confidence, status=processed
+    deactivate CeleryInf
 ```
 
 As you can see, the flow is basically:
@@ -124,11 +174,11 @@ The reason of this is separate responsibilities and scalability. Also, I was loo
 
 I will explore this in deep in Implementation  and why this? sections.
 
-### How to use this project?
+# How to use this project?
 
 After execute the `make` commands I recommend to make this:
 
-# seed.
+### seed.
 
 In postman or using curls or using your preffered tool, make a request to:
 
@@ -138,7 +188,7 @@ This endpoint will copy the data from the data set into the DB.
 
 After that execute:
 
-# process-data
+### process-data
 `POST http://localhost:5000/process-tickets`
 with the payload:
 
@@ -149,7 +199,7 @@ with the payload:
 ```
 This will process the data from the db that hasn't processed before and make the inference.
 
-# Process new ticket.
+### Process new ticket.
 
 `POST http://localhost:5000/requests`
 
@@ -166,7 +216,7 @@ with a payload like this:
 
 This will create a new record from scratch that is not presented in the dataset. Store the result in the DB.
 
-# Fetch a ticket:
+### Fetch a ticket:
 
 `GET http://localhost:5000/requests/{id}`
 
@@ -179,7 +229,7 @@ with the `task_id`, make another request to:
 
 This return the proper ticket.
 
-# Filter tickets.
+### Filter tickets.
 
 Similar to fetch a single ticket:
 
@@ -242,6 +292,33 @@ The reason of this is have fully decoupled of both process and scale independent
 
 I expand this in why this? section.
 
+# ticket_worker:
+
+It's the worker for process data and execute mainly I/O operations. For that reason the worker use multithreading, in this
+case, native threads (threads handle by the OS). This worker is mainly in charge to upload the dataset into the DB (I/O operation)
+
+The worker has different tasks (check the `/ticket_worker/worker.py`) and also fetch the data using batches (check `database.py`)
+
+For memory optimization store the data fetch in a list per batches that is good for small - medium datasets. For large datasets is developed
+a generator (currently is not used but can be used)
+
+# inference_worker.
+
+The worker in charge of inference. When the image is build, the docker context download the CSV and make a basi training of a model in
+`sckit-learn` and store the pretrain model in the same container.
+
+The CSV used for make the classification is the same that was used for train the model. This of course leads a data leakage and is bac practice in 
+a real scenario. I've used this for simplicity and because the idea fo this is shows the ML pipeline.
+
+For a real scenario we need to use a pretrain model for GPT for example o Pytorch or something similar. Or train our own model 
+but using a different CSV.
+
+Is deployed in a docker container isolated, using the cpu for process (for this light model is fine), for a heavy model, we need to use parallelism
+probably using the GPU cores using CUDA.
+
+Also, for large model needs to be implemented the Dataloader to charge the data into the model for the inference. And probably isolate
+the load and charge of model in a separate class (improvements that we can do)
+
 
 ## Redis (celery_backend)
 
@@ -251,6 +328,9 @@ Redis acts just as the backend for the message broker, it's pretty common to use
 
 The DB to store the dataset, the result of the inference and new tickets also. Both workers are able to write in this DB.
 It was implemented a schema for the DB using the file `src/database/sql/init.sql` (check for details)
+
+The Postgres db is deployed in an Isolated container. The container is exposed in the `host-port 5432` (the postgres default one)
+and like that you can use pg-admin or Data-grip (my favorite one) to explore the DB.
 
 
 
@@ -374,7 +454,7 @@ ticket_worker:
 
 This works good, but for an optimize solution (and also a cost-efficient) this needs to scale on base of metrics.
 
-In a real scenario, the relevant metrics for this would be `length of the queue`, `latency of the queue` and probably `memory`
+In a real scenario, the relevant metrics for this would be `length of the queue`, `latency of the queue` and probably `memory`,
 
 In base of this metrics we decided if scale in or out.
 
@@ -421,7 +501,7 @@ However, to improve the performance of this could be implement pagination in the
 
 # More improvements
 
-2. We can implement pagination in the endpoints response and fethcing the data in the DB
+2. We can implement pagination in the endpoints response and fetching the data in the DB
 3. Can be explored compress metadata.
 4. The inference worker  can process by batches if is needed.
 5. we can implement memoization to cache frequent queries using cachetools for example and cache the S3 connections.
@@ -450,6 +530,12 @@ loader = DataLoader(
 Using CUDA.
 
 --------------------
+
+## What is missing?
+
+- Tests
+- Alembic Migrations
+- Refactor code, this is a naive implementation.
 
 ## Code Refactor
 
