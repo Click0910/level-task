@@ -1,0 +1,6 @@
+celery[redis]==5.3.1
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.29
+numpy==1.26.4
+pandas==2.2.1
+huggingface_hub==0.23.2

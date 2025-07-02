@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  broker:
+    container_name: celery-broker
+    image: rabbitmq:3.9.29-management-alpine
+    ports:
+      - 8080:15672  # RabbitMQ Management UI
+      - 5672:5672   # AMQP port
+    environment:
+      RABBITMQ_DEFAULT_VHOST: "/"
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+    networks:
+      - network
+
+  backend:
+    container_name: celery-backend
+    image: redis:7.0.11
+    ports:
+      - 6379:6379
+    networks:
+      - network
+    command: redis-server --requirepass password
+
+  ticket_worker:
+    build: ./src/workers/ticket_worker
+    env_file:
+      - 'variables.env'
+    environment:
+      - CELERY_WORKER_CONCURRENCY=8
+    links:
+      - backend:backend
+      - broker:broker
+      - database:database
+    depends_on:
+      - broker
+      - backend
+      - database
+    networks:
+      - network
+    command: celery -A worker.ticket worker -P threads --loglevel=INFO --queues=ticket_queue
+
+  inference_worker:
+    build:
+      context: ./src/workers/inference
+      shm_size: '2gb'
+    container_name: celery-inference
+    env_file:
+      - 'variables.env'
+    environment:
+      - INFERENCE_DEVICE=cpu
+      - BATCH_SIZE=10
+      - NUM_WORKERS=2
+    links:
+      - backend:backend
+      - broker:broker
+      - database
+    networks:
+      - network
+    depends_on:
+      - ticket_worker
+      - database
+    command: celery -A worker.inference worker -P threads --loglevel=INFO --queues=inference_queue
+
+  api:
+    build: ./src/api
+    container_name: tickets-api
+    env_file:
+      - 'variables.env'
+    volumes:
+      - ./src/api:/api
+    links:
+      - backend:backend
+      - broker:broker
+    depends_on:
+      - ticket_worker
+      - inference_worker
+    ports:
+      - 5000:5000
+    networks:
+      - network
+
+  database:
+    build: ./src/database
+    ports:
+      - 5432:5432
+    env_file:
+      - 'variables.env'
+    volumes:
+      - ${TEMP_FOLDER}/database:/tmp/database
+    networks:
+      - network
+
+networks:
+    network: {}
