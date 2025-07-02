@@ -71,7 +71,7 @@ The complete flow you can check in the next diagrams:
 
 ```mermaid
 graph TD
-    subgraph API FastAPI
+    subgraph API_FastAPI["API FastAPI"]
         A1["POST /requests<br/>(new ticket)"] --> C1["send_task:<br/>process_new_ticket"]
         A2["POST /seed"] --> C2["send_task:<br/>seed_database"]
         A3["POST /process-tickets"] --> C3["send_task:<br/>process_existing_ticket"]
@@ -80,7 +80,7 @@ graph TD
         A6["GET /status/{task_id}"] --> C6["AsyncResult lookup"]
     end
 
-    subgraph Celery Broker (RabbitMQ)
+    subgraph Celery_Broker["Celery Broker (RabbitMQ)"]
         C1 --> Q1["ticket_queue"]
         C2 --> Q1
         C3 --> Q1
@@ -89,7 +89,7 @@ graph TD
         C7["send_task:<br/>run_inference"] --> Q2["inference_queue"]
     end
 
-    subgraph Worker ticket_worker
+    subgraph Worker_ticket_worker["Worker ticket_worker"]
         Q1 --> W1["process_new_ticket"]
         Q1 --> W2["seed_database"]
         Q1 --> W3["process_existing_ticket"]
@@ -98,21 +98,20 @@ graph TD
         W1 --> C7
     end
 
-    subgraph Worker inference_worker
+    subgraph Worker_inference_worker["Worker inference_worker"]
         Q2 --> W6["run_inference"]
         W6 --> DB1[(PostgreSQL)]
     end
 
-    subgraph Database
+    subgraph Database["Database"]
         DB1[(PostgreSQL)]
     end
 
-    style API FastAPI fill:#e0f7fa,stroke:#00796b
-    style Celery Broker (RabbitMQ) fill:#f1f8e9,stroke:#689f38
-    style Worker ticket_worker fill:#fff3e0,stroke:#f57c00
-    style Worker inference_worker fill:#fce4ec,stroke:#c2185b
+    style API_FastAPI fill:#e0f7fa,stroke:#00796b
+    style Celery_Broker fill:#f1f8e9,stroke:#689f38
+    style Worker_ticket_worker fill:#fff3e0,stroke:#f57c00
+    style Worker_inference_worker fill:#fce4ec,stroke:#c2185b
     style Database fill:#ede7f6,stroke:#512da8
-
 ```
 
 ```mermaid
