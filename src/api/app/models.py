@@ -2,6 +2,8 @@ from typing import Optional, Any
 
 from pydantic import BaseModel
 
+from datetime import datetime
+
 
 class TicketRequest(BaseModel):
     subject: str
@@ -20,3 +22,23 @@ class TaskStatusResponse(BaseModel):
     message: Optional[str]
     result: Optional[Any] = None
     error: Optional[str] = None
+
+
+class TicketResponse(BaseModel):
+    ticket_id: int
+    subject: Optional[str]
+    body: Optional[str]
+    answer: Optional[str]
+    type: Optional[str]
+    queue: Optional[str]
+    priority: Optional[str]
+    language: Optional[str]
+    tags: Optional[Any]
+    predicted_category: Optional[str]
+    confidence: Optional[float]
+    summary: Optional[str]
+    processed_at: Optional[datetime]
+    ground_truth_category: Optional[str]
+
+    class Config:
+        orm_mode = True

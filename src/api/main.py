@@ -5,7 +5,8 @@ from celery.result import AsyncResult
 from fastapi import FastAPI, Body, Query, HTTPException
 
 from app import models
-from typing import Optional, Any
+from app import database
+from typing import Optional, Any, List
 from utils.responses import build_response
 
 
@@ -63,23 +64,18 @@ async def process_data(requests: models.ProcessTicketsRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/requests/{id}", response_model=models.TaskStatusResponse)
+@app.get("/requests/{id}", response_model=models.TicketResponse)
 async def get_record(id: str):
     try:
-        task = tasks.send_task(
-            "fetch_record",
-            kwargs={"ticket_id": id},
-            queue="ticket_queue"
-        )
-        return build_response(
-            task.id,
-            f"Fetching ticket {id} in background"
-        )
+        ticket = database.fetch_record(id)
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+        return ticket
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/requests", response_model=models.TaskStatusResponse)
+@app.get("/requests", response_model=List[models.TicketResponse])
 async def get_requests_by_category(
         category: Optional[str] = Query(None, description="Category to filter by")
 ):
@@ -90,12 +86,8 @@ async def get_requests_by_category(
                 detail="Query parameter 'category' is required"
             )
 
-        task = tasks.send_task(
-            "filter_by_category",
-            kwargs={"category": category.lower()},
-            queue="ticket_queue"
-        )
-        return build_response(task.id, f"filter {category}")
+        filtered_tickets = database.filter_tickets_category(category)
+        return filtered_tickets
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
