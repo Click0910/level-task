@@ -1,6 +1,6 @@
 from typing import Optional, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from datetime import datetime
 
@@ -40,5 +40,4 @@ class TicketResponse(BaseModel):
     processed_at: Optional[datetime]
     ground_truth_category: Optional[str]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

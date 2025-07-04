@@ -219,25 +219,29 @@ This will create a new record from scratch that is not presented in the dataset.
 
 `GET http://localhost:5000/requests/{id}`
 
-This return a payload with the `task_id`. The reason of this is because we are using the queue and workers to execute this in async mode.
-In a real scenario this doesn't have sense, but for this demo I made like this. (Explanation of this in why this? section)
-
-with the `task_id`, make another request to:
-
-`GET http://localhost:5000/status/{task_id}`
-
-This return the proper ticket.
+This return a payload with the ticket data
 
 ### Filter tickets.
-
-Similar to fetch a single ticket:
 
 
 `GET http://localhost:5000/requests?category=technical`
 
-With the `task_id`, make another request:
+Fetch a list with the tickets filtered.
 
-`GET http://localhost:5000/status/{task_id}`
+### Status Async Task.
+
+When you execute endpoints like `POST /seed` or `POST /process-tickets`, in the background is executed an async
+task using RabbitMQ and celery workers. Those endpoints return a `task_id`
+
+Using that `task_id` you can make a request to:
+
+`GET http://localhost:5000/status/{ticket_id}`
+
+This endpoint return the status of the task.
+
+
+Note: for better client experience it can be setup a jupiter notebook to make requests periodically adn automate the workflow.
+But this could be done latter.
 
 ----------------------------------
 
@@ -345,19 +349,19 @@ Basically, `/seed` are in charge to upload the dataset unto the DB. Is in charge
 
 Basically the idea was to take advantage of the distributed system that was implemented for this demo and the async tasks to improve the performance of upload data.
 
-The dataset used is relative small, but imagine something with hundred thousands or millions of rows. So, the idea was tu take adventage of the infra already setUp.
+The dataset used is relative small, but imagine something with hundred thousands or millions of rows. So, the idea was tu take advantage of the infra already setUp.
 
-In a prod scneario this taks can be triggere using an SDK or CLI command in order to avoid lattency issues, but fot this demo I consider is ok have this endpoint.
+In a prod scenario these tasks can be trigger using an SDK or CLI command in order to avoid latency issues, but fot this demo I consider is ok have this endpoint.
 
-And what about `/status/task_id`?
 
-When you made a requests to the endpoint `GET /requests/{id}`, you will get the `task_id`, that is the id of the task that celery is executed. 
-So, in order to get the proper ticket, you need to make a second request to `GET /status/ticket_id` using the `ticket_id` Ok, but why use a celery worker for this and complex a simple request?
+## And what about `/status/task_id`?
 
-Well, similar reason, take advantage of the infra already provisioned. The API container doesn't have access to the DB and I didn't want to expend more time to configure again the engine DB in the API container,
-for this demo makes sense to use the existing infra and the workers already have access to the DB, So I just take advantage of this.
+Endpoints like `POST /seed` and `POST /process-tickets` execute under the hood async tasks using celery and RabbitMQ.
 
-In a real scenario, GET a record from the DB is mainly a synch process, so in a real scenario the API container will have access to the DB. But for this demo, lets do like this.
+Since is an async task, celery only returns the data when the status of the task is "SUCCESS".
+
+The idea of this endpoint is to check the status of the async tasks execute by the endpoints.
+
 
 ## What about /process-ticket and POST /requests?
 
@@ -407,14 +411,40 @@ But for now and for this demo this works well.
 Disadvantage of RabbitMQ is horizontal scalability of the queue, but for now I think is not a problem this (even in a real scenario in cloud we can use AWS SQS that scales in theory "infinite")
 
 
-## why fetch a single record is something Async?
-
-I mentioned this before but is mainly for this demo and use the existing infra. Mainly that. In real scenario the API needs to have access into the DB.
-
 ## Why of this architecture?
 
 This distributed system is mainly thinking in scalability of the solution for process large datasets. The idea is scale workers when is needed.
 
+
+# Unit-Tests
+
+It was implemented some simple unit test for a couple of endpoints. (check test folder)
+
+Those endpoints only were tested with success cases.
+
+In a real project needs to be tested all cases included fail cases. Also edge cases.
+
+Also, in a real scenario is needed to test basically every implementation in the application. In this case it would be needed test the celery workers
+with all the tasks and auxiliar functions.
+
+For sure add unit test for everything would take probably days not just 4 hours.
+
+
+-----------------
+
+# AWS Migration.
+
+The same architecture and the same principles in this design can be implemented using AWS.
+
+Basically:
+- instead of use `RabbitMQ` we can use `AWS SQS`. 
+- Instead of `Celery Workers` we can use `AWS Lambdas`. 
+- Instead of `PostgresSQL` we can use `AWS DynamoDB`.
+- The API could be a lambda as well (but monitoring and taking care in don't exceed the lambda execution runtime.)
+- `AWS SageMaker` family for train models
+
+Is basically the same architecture, but serverless. This helps a lot in the maintainability and scalability of the solution,
+since AWS take cares about maintain and scale the lambdas or SQS.
 
 
 -----------------
@@ -424,8 +454,8 @@ This distributed system is mainly thinking in scalability of the solution for pr
 The workers have som values by default. For example for `ticket_worker` I set up by default 2 instances of this and by default
 each instance has 8 threads.
 
-Using multiple threads here works because both tasks are mainly I/O operations (consult a DB and upload in a S3 bucket). Celery handle in background the threads and in python
-multythreading for I/O operations is fine (it's a problem for CPU bound operations and real parallelism base on threads)
+Using multiple threads here works because both tasks are mainly I/O operations (read and write the DB). Celery handle in background the threads and in python
+multithreading for I/O operations is fine (it's a problem for CPU bound operations and real parallelism base on threads)
 
 
 
@@ -462,24 +492,27 @@ In base of this metrics we decided if scale in or out.
 Similar way to inference worker. I've set up  using some values by default. But the decision to scale should be on base of
 queue metrics.
 
-Also, I'm making the inference using CPU, that for this demo is fine, since we are using a model sckit-learn model using CPU is fine.
+Also, I'm making the inference using CPU, that for this demo is fine, since we are using a `sckit-learn`  model using CPU is fine.
 For large models we need to use heavi parallelism using CUDA for example to take advantage te cores of the GPU.
 
 -----------------
 
-The container API needs to have access to the DB.
 
+The answers for filter tickets requesting `GET http://localhost:5000/requests?category=technical`.
 
-------------------
-
-The answers for filter all the records needs to be paginated to don't overload the client.
-
+all the records needs to be paginated to avoid overload the client.
 
 ------------------
 
-Another improvement that I implemented was make Batch processing im `database.py`, basically we consult the DB in batches.
+To consult the DB thinking in large Datasets, I implemented Batch processing in `database.py`, basically we consult the DB in batches.
 
-Improve the indexes in the DB, try to partition the DB by categories and optimize the configuration of the DB:
+Extra improvements related to the DB could be:
+
+- Improve the indexes in the DB
+- try to sharding the DB by dates or another field.
+- The response of the DB can be paginated
+- optimize the configuration of the DB:
+
 ```
 CREATE INDEX CONCURRENTLY {index} ON TABLE USING BRIN (categories);
 CREATE INDEX CONCURRENTLY {index} ON TABLE USING GIN (Something);
@@ -495,7 +528,7 @@ ALTER TABLE products SET (
 # To implement this we need to make test, so I didn't implement in the code.
 ```
 
-However, to improve the performance of this could be implement pagination in the responses of teh DB
+But this needs to be tested and evaluate carefully.
 
 
 # More improvements
@@ -505,13 +538,13 @@ However, to improve the performance of this could be implement pagination in the
 4. The inference worker  can process by batches if is needed.
 5. we can implement memoization to cache frequent queries using cachetools for example and cache the S3 connections.
 7. In a real project the workers will be in a cluster (like kubernetes or ECS), so apply load balancers.
-8. Dataset Sharding (is complex to implement but can be explored)
+8. DB Sharding (is complex to implement but can be explored)
 
 and etc.
 
 ----------------------
 
-In order to use a large pre-train model, is needed to implement a dataloader:
+In order to use a large pre-train model, is needed to implement a dataloader to upload the data for the inference in the model:
 ```
 loader = DataLoader(
     dataset,
@@ -524,22 +557,20 @@ loader = DataLoader(
 )
 ```
 
-
-
-Using CUDA.
+Use CUDA to execute parallelism using the GPU threads
 
 --------------------
 
 ## What is missing?
 
-- Tests
+- Complete unit tests.
 - Alembic Migrations
 - Refactor code, this is a naive implementation.
 
 ## Code Refactor
 
-For scalabality of the code and easier maintain, could be beneficial implement and refactor the code strucure implemmenting some patters,
-for example follow clean architechture pattern and principles, Isolating the businnes logic from external resources like API,
+For scalabality of the code and easier maintain, could be beneficial implement and refactor the code structure implementing some patters,
+for example follow clean architecture pattern and principles, Isolating the businnes logic from external resources like API,
 message brokers, DBs, Redis, Workers, in gneral any external infraestructure.
 
 

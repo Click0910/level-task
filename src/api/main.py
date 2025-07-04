@@ -26,7 +26,7 @@ async def process_ticket(data: models.TicketRequest):
     try:
         task = tasks.send_task(
             "process_new_ticket",
-            kwargs=data.dict(),
+            kwargs=data.model_dump(),
             queue="ticket_queue"
         )
         return build_response(task.id, "New ticket will be processed")
