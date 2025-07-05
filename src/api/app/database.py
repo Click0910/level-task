@@ -7,9 +7,12 @@ from sqlalchemy import (
     Column,
     String,
     Float,
-    JSON,
-    TIMESTAMP
+    TIMESTAMP,
+    BigInteger,
+    Text,
+    Index,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sqlalchemy.future import select
 
@@ -24,20 +27,30 @@ Base = declarative_base()
 class Ticket(Base):
     __tablename__ = "customer_support_tickets"
 
-    ticket_id = Column(String, primary_key=True)
-    subject = Column(String)
-    body = Column(String)
-    answer = Column(String)
-    type = Column(String)
-    queue = Column(String)
-    priority = Column(String)
-    language = Column(String)
-    tags = Column(String)
-    predicted_category = Column(String)
+    ticket_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    subject = Column(Text)
+    body = Column(Text)
+    answer = Column(Text)
+    type = Column(String(50))
+    queue = Column(String(50))
+    priority = Column(String(20))
+    language = Column(String(10))
+    tags = Column(JSONB)
+
+    predicted_category = Column(String(50))
     confidence = Column(Float)
-    summary = Column(String)
-    processed_at = Column(String)
-    ground_truth_category = Column(String)
+    summary = Column(Text)
+    processed_at = Column(TIMESTAMP)
+
+    ground_truth_category = Column(String(50))
+
+    __table_args__ = (
+        Index("idx_queue", "queue"),
+        Index("idx_priority", "priority"),
+        Index("idx_predicted_category", "predicted_category"),
+        Index("idx_ground_truth", "ground_truth_category"),
+        Index("idx_processed_at", "processed_at"),
+    )
 
 
 def get_engine():

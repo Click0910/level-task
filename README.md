@@ -17,6 +17,16 @@ For this demo are deployed in a docker-compose:
 Everything is deployed in an isolated docker container.
 later in this document it will be explained the components and the architectural decision.
 
+I've included a `variables.env`  file with dummy values strictly for demonstration purposes.
+In a real-world or production environment, environment variables must never be stored or shared in `.env`  files.
+
+Instead, secrets and sensitive configurations should be managed securely using tools like `AWS SSM Parameter Store` , `Secrets Manager`, 
+or any appropriate vault solution.
+
+These values should then be injected into the operating system environment at runtime — for example, via your deployment pipeline, 
+container orchestration system (like `ECS/EKS`), or startup scripts — ensuring that no credentials are ever hardcoded or 
+committed to version control.
+
 ## Local SetUp instructions
 
 ### Prerequesites
@@ -561,17 +571,30 @@ Use CUDA to execute parallelism using the GPU threads
 
 --------------------
 
+## Alembic Migrations.
+
+It was setUp alembic schema migrations to execute locally.
+
+You can check the alembic folder with the versions of the db.
+
+For now there aren't any change in the versions of the db, because is the initial schema.
+
+The initial setUp for alembic is locally.
+
+For further improvements and taking into account that this is a distributed system, in a real scenario, alembic should be
+deployed in a container. Could be an independent container, or fore example in the API container.
+
 ## What is missing?
 
 - Complete unit tests.
-- Alembic Migrations
+- Deploy Alembic in docker container (could be in a dedicate container or in an existing container with DB access)
 - Refactor code, this is a naive implementation.
 
 ## Code Refactor
 
-For scalabality of the code and easier maintain, could be beneficial implement and refactor the code structure implementing some patters,
-for example follow clean architecture pattern and principles, Isolating the businnes logic from external resources like API,
-message brokers, DBs, Redis, Workers, in gneral any external infraestructure.
+For scalability of the code and easier maintain, could be beneficial implement and refactor the code structure implementing some patters,
+for example follow clean architecture pattern and principles, Isolating the business logic from external resources like API,
+message brokers, DBs, Redis, Workers, in general any external infrastructure.
 
 
 This is a bit complex and tedious to implement, however could be some advantages if is implemented a clean architecture
