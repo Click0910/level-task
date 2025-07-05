@@ -11,10 +11,6 @@ from app.database import (
     filter_tickets_category,
     save_new_ticket,
 )
-
-from io import BytesIO
-import numpy as np
-import sqlalchemy
 from scripts import seed
 
 

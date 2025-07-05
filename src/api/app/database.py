@@ -1,109 +1,81 @@
 import os
 from contextlib import contextmanager
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Optional
 
-import sqlalchemy
 from sqlalchemy import (
     create_engine,
-    MetaData,
-    Table,
-    select,
-    and_,
-    insert
+    Column,
+    String,
+    Float,
+    JSON,
+    TIMESTAMP
 )
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.future import select
 
-from celery.utils.log import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
-metadata = MetaData()
+# Declarative Base for ORM
+Base = declarative_base()
 
-tickets = Table(
-    "customer_support_tickets",
-    metadata,
-    sqlalchemy.Column("ticket_id", sqlalchemy.String),
-    sqlalchemy.Column("subject", sqlalchemy.String),
-    sqlalchemy.Column("body", sqlalchemy.String),
-    sqlalchemy.Column("answer", sqlalchemy.String),
-    sqlalchemy.Column("type", sqlalchemy.String),
-    sqlalchemy.Column("queue", sqlalchemy.String),
-    sqlalchemy.Column("priority", sqlalchemy.String),
-    sqlalchemy.Column("language", sqlalchemy.String),
-    sqlalchemy.Column("tags", sqlalchemy.String),
-    sqlalchemy.Column("predicted_category", sqlalchemy.String),
-    sqlalchemy.Column("confidence", sqlalchemy.String),
-    sqlalchemy.Column("summary", sqlalchemy.String),
-    sqlalchemy.Column("processed_at", sqlalchemy.String),
-    sqlalchemy.Column("ground_truth_category", sqlalchemy.String),
-)
+
+class Ticket(Base):
+    __tablename__ = "customer_support_tickets"
+
+    ticket_id = Column(String, primary_key=True)
+    subject = Column(String)
+    body = Column(String)
+    answer = Column(String)
+    type = Column(String)
+    queue = Column(String)
+    priority = Column(String)
+    language = Column(String)
+    tags = Column(String)
+    predicted_category = Column(String)
+    confidence = Column(Float)
+    summary = Column(String)
+    processed_at = Column(String)
+    ground_truth_category = Column(String)
 
 
 def get_engine():
-    """
-    Factory singleton that provides a single database engine instance.
-
-    Creates and maintains a single SQLAlchemy engine instance using connection pooling.
-    Subsequent calls return the same engine instance. Configures pool settings for
-    production environments.
-
-    Returns:
-        sqlalchemy.engine.Engine: SQLAlchemy database engine instance
-
-    Notes:
-        - Uses DATABASE_URL environment variable for connection string
-        - Connection pool configuration:
-          * pool_size=20 (max idle connections)
-          * max_overflow=10 (temporary max connections beyond pool_size)
-          * pool_pre_ping=True (validate connections before use)
-        - Implements singleton pattern to prevent multiple engine instances
-
-    Example:
-        engine = get_engine()
-    """
     if not hasattr(get_engine, "engine"):
         DATABASE_URL = os.environ["DATABASE_URL"]
         get_engine.engine = create_engine(
             DATABASE_URL,
             pool_size=20,
             max_overflow=10,
-            pool_pre_ping=True
+            pool_pre_ping=True,
+            future=True
         )
     return get_engine.engine
 
 
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
+
+
 @contextmanager
-def get_db_connection():
-    """
-    Context manager for obtaining and automatically releasing database connections.
-
-    Provides safe connection handling by ensuring proper cleanup after use. Connections
-    are acquired from the engine's connection pool and returned when context exits.
-
-    Yields:
-        sqlalchemy.engine.Connection: Active database connection
-
-    Example:
-        with get_db_connection() as conn:
-            result = conn.execute(query)
-    """
-    engine = get_engine()
-    conn = engine.connect()
+def get_db_session() -> Session:
+    session = SessionLocal()
     try:
-        yield conn
+        yield session
     finally:
-        conn.close()
+        session.close()
 
 
-def fetch_record(ticket_id: str) -> Dict[str, Any]:
+def fetch_record(ticket_id: str) -> Optional[Dict[str, Any]]:
     """
-    Fetch a specific ticket in the DB
+    Fetch a specific ticket by ID using ORM
     """
     try:
-        query = select(tickets).where(tickets.c.ticket_id == ticket_id)
+        with get_db_session() as session:
+            result = session.execute(
+                select(Ticket).where(Ticket.ticket_id == ticket_id)
+            ).scalar_one_or_none()
 
-        with get_db_connection() as conn:
-            result = conn.execute(query).fetchone()
-            return dict(result._mapping) if result else None
+            return result.__dict__ if result else None
 
     except Exception as e:
         logger.error(f"Finding Error {ticket_id}: {str(e)}")
@@ -111,10 +83,17 @@ def fetch_record(ticket_id: str) -> Dict[str, Any]:
 
 
 def filter_tickets_category(category: str) -> List[Dict[str, Any]]:
+    """
+    Fetch all tickets with a given predicted category using ORM
+    """
     try:
-        query = select(tickets).where(tickets.c.predicted_category == category)
-        with get_db_connection() as conn:
-            results = conn.execute(query).fetchall()
-            return [dict(row._mapping) for row in results]
+        with get_db_session() as session:
+            results = session.execute(
+                select(Ticket).where(Ticket.predicted_category == category)
+            ).scalars().all()
+
+            return [ticket.__dict__ for ticket in results]
+
     except Exception as e:
-        raise e
+        logger.error(f"Filtering Error for category {category}: {str(e)}")
+        raise
