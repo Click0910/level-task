@@ -7,8 +7,6 @@ from celery.utils.log import get_logger
 
 from app.database import (
     fetch_unprocessed_tickets,
-    fetch_record,
-    filter_tickets_category,
     save_new_ticket,
 )
 from scripts import seed
@@ -93,38 +91,3 @@ def process_existing_data(self, batch_size=1000):
 
         except ValidationError as e:
             logger.error(f"Invalid ticket data: {ticket_data}. Error: {e}")
-
-
-@ticket.task(bind=True, name="fetch_record", acks_late=True, queue="ticket_queue")
-def fetch_data_task(self, ticket_id):
-    try:
-        self.update_state(state="STARTED", meta={"step": "fetching_record"})
-        record = fetch_record(ticket_id)
-
-        if not record:
-            logger.warning(f"Ticket ID {ticket_id} no encontrado.")
-            return {"ticket_id": ticket_id, "found": False}
-
-        logger.info(f"✅ Ticket {ticket_id} encontrado y procesado.")
-        return {"ticket_id": ticket_id, "found": True, "data": record}
-
-    except Exception as e:
-        logger.error(f"Error processing ticket {ticket_id}: {str(e)}")
-        raise
-
-
-@ticket.task(name="filter_by_category", bind=True, queue="ticket_queue", acks_late=True)
-def filter_by_category(self, category: str) -> List[Dict[str, Any]]:
-    try:
-        self.update_state(state="STARTED", meta={"step": "fetching_record"})
-        records = filter_tickets_category(category)
-
-        if not records:
-            logger.warning(f"Category {category} not found.")
-            return [{"category": category, "found": False}]
-
-        logger.info(f"✅ Category {category} encontrado y procesado.")
-        return records
-    except Exception as e:
-        logger.error(f"❌ Error in filter_by_category: {str(e)}")
-        self.retry(exc=e, countdown=5, max_retries=3)

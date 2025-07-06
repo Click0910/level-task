@@ -14,7 +14,7 @@ For this demo are deployed in a docker-compose:
     -API
     -PostgresDB
 
-Everything is deployed in an isolated docker container.
+Everything is deployed in isolated docker containers.
 later in this document it will be explained the components and the architectural decision.
 
 I've included a `variables.env`  file with dummy values strictly for demonstration purposes.
@@ -39,7 +39,7 @@ Ensure to have installed the prerequisites in your local environment.
 
 ### Optional.
 
-Docker-desktop. I know that is not as stable like using the CLI, but I'm pro GUI (graphic interfaces), so helps a lot.
+`Docker-desktop` . I know that is not as stable like using the CLI, but I'm pro GUI (graphic interfaces), so helps a lot.
 
 ----------------------
 
@@ -74,7 +74,7 @@ make down
 
 ### Architecture
 
-As was mentioned before, for this project is used Message broker and queues (RabbitMQ), consumers (celery workers),
+As was mentioned before, for this project are used Message broker and queues (RabbitMQ), consumers (celery workers),
 API (fastAPI), broker-backend (Redis) and DB (PostgresSQL).
 
 The complete flow you can check in the next diagrams:
@@ -124,6 +124,8 @@ graph TD
     style Database fill:#ede7f6,stroke:#512da8
 ```
 
+
+
 ```mermaid
 graph LR
     A[Cliente] -->|POST /requests| B[FastAPI]
@@ -135,6 +137,8 @@ graph LR
     G -->|3. Clasificar| H[Modelo ML]
     H -->|4. Resultados| E
 ```
+
+
 
 ```mermaid
 sequenceDiagram
@@ -169,6 +173,7 @@ sequenceDiagram
     deactivate CeleryInf
 ```
 
+
 As you can see, the flow is basically:
 
 API -> RabbitMQ Ticket -> celery worker ticker -> RabbitMQ inference -> Celery inference.
@@ -189,7 +194,7 @@ After execute the `make` commands I recommend to make this:
 
 ### seed.
 
-In postman or using curls or using your preffered tool, make a request to:
+In postman or using curls or using your preferred tool, make a request to:
 
 `POST http://localhost:5000/seed`
 
@@ -206,7 +211,7 @@ with the payload:
     "batch_size": 2000
 }
 ```
-This will process the data from the db that hasn't processed before and make the inference.
+This will process the data from the db that was seed and hasn't processed before and make the inference.
 
 ### Process new ticket.
 
@@ -236,7 +241,7 @@ This return a payload with the ticket data
 
 `GET http://localhost:5000/requests?category=technical`
 
-Fetch a list with the tickets filtered.
+Fetch a list with the tickets filtered on base a query param, like technically or billing.
 
 ### Status Async Task.
 
@@ -247,11 +252,13 @@ Using that `task_id` you can make a request to:
 
 `GET http://localhost:5000/status/{ticket_id}`
 
-This endpoint return the status of the task.
+This endpoint return the status of the task, like PENDING, COMPLETED, FAILED.
 
 
-Note: for better client experience it can be setup a jupiter notebook to make requests periodically adn automate the workflow.
-But this could be done latter.
+**_Note_**: _For this demo you need to make requests manually to the endpoints using your preferred tool. In order to automate a bit more
+the workflow, it can be implemented a jupyter notebook where is automated all the requests for a better client experience. for example
+make peridically requests to `/status` to check the satus of the task. 
+the notebook can be also deployed in an isolated container._
 
 ----------------------------------
 
@@ -261,23 +268,24 @@ As I mentioned in the overview, for this demo, I focus mainly in the architectur
 and make inferences on the data.
 
 To do this, I designed the architecture that is above and in order to implement it, I designed a distributed system (for this demo, deployed in a docker compose. For a real project,
-this will be deployed in a cluster like Kubernetes or AWS ECS fargate). In this distributed system, everything is deply in isolated containers,
-It was deployed
+this will be deployed in a cluster like `Kubernetes` or `AWS ECS fargate`). In this distributed system, everything is deply in isolated containers,
+It was deployed:
 
 ## APi.
 
 This is just an API that contains the next endpoints:
 
 - `POST /seed` -> Seed the DB, Upload the data from the dataset to the DB.
+- `POST /process-tickets` -> Process the tickets form the dataset that are seed in the DB with `POST /seed`. Make the inference for the tickets in the DB from the dataset.
 - `POST /requests` -> Process new tickets that are not seed with `POST /seed`. Tickets that are not from the dataset. Make the inference.
 - `GET /requests/{id}` -> Fetch a specific record from the DB on base id.
 - `GET /requests?category={something}` -> Accepts query param and filter on base category.
 - `GET /status/task_id `-> Check the status of an Async task.
-- `POST /process-tickets` -> Process the tickets form the dataset that are seed in the DB with `POST /seed`. Make the inference for the tickets in the DB from the dataset
+
 
 Probably you have questions about, why `/seed`, why `/process-tickets`, why `/status/task_id`
 
-I'll try to cover and answer the potential questions in section why this?
+I'll try to cover and answer the potential questions in section **why this**?
 
 The container for the API is exposed in the port 5000.
 
@@ -288,11 +296,14 @@ As message broker I choose a RabbitMQ with two queues (apart from default queues
 - `ticket_queue`
 - `inference_queue`
 
-Why those queues or why RabbitMQ? Answers in why this? section.
+Why those queues or why RabbitMQ? Answers in **why this?** section.
+
+`RabbitMQ` is exposed in port `8080` and with the dummy credentials that you can found in `variables.env` file, you can access to
+RabbitMQ portal to check the queues, messages etc.
 
 ## Celery workers.
 
-Celery is the official consumer of RabbitMQ and has a native integration with it, so makes sense to use celery workers as consumer.
+`Celery` is the official consumer of `RabbitMQ` and has a native integration with it, so makes sense to use `celery workers` as consumer.
 
 It was implemented two celery workers:
 
@@ -303,34 +314,37 @@ Both workers are deployed in separated an isolated containers.
 
 The reason of this is have fully decoupled of both process and scale independently.
 
-I expand this in why this? section.
+I expand this in **why this?** section.
 
-# ticket_worker:
+### ticket_worker:
 
-It's the worker for process data and execute mainly I/O operations. For that reason the worker use multithreading, in this
-case, native threads (threads handle by the OS). This worker is mainly in charge to upload the dataset into the DB (I/O operation)
+It's the worker for process data and execute mainly I/O operations. For that reason the worker use `multithreading`, in this
+case, native threads (threads handle by the OS). This worker is mainly in charge to upload the dataset into the DB (I/O operations)
 
 The worker has different tasks (check the `/ticket_worker/worker.py`) and also fetch the data using batches (check `database.py`)
 
-For memory optimization store the data fetch in a list per batches that is good for small - medium datasets. For large datasets is developed
-a generator (currently is not used but can be used)
+For memory optimization the data is fetched by batches and store the whole batch in a `List` in memory to be processed. 
+This approach is good for small - medium datasets. 
 
-# inference_worker.
+For large datasets is developed a generator (currently is not used but can be used) in order to use the lazy evaluation 
+and don't overload the memory/
 
-The worker in charge of inference. When the image is build, the docker context download the CSV and make a basi training of a model in
+### inference_worker.
+
+The worker in charge of inference. When the image is build, the docker context download the CSV and make a basic training of a model in
 `sckit-learn` and store the pretrain model in the same container.
 
-The CSV used for make the classification is the same that was used for train the model. This of course leads a data leakage and is bac practice in 
-a real scenario. I've used this for simplicity and because the idea fo this is shows the ML pipeline.
+The CSV used for make the classification is the same that was used for train the model. This of course leads a `data leakage` and this is a really bad practice in 
+a real scenario. I've used this for simplicity and because the idea of this demo is shows the ML pipeline, instead focus un train models.
 
-For a real scenario we need to use a pretrain model for GPT for example o Pytorch or something similar. Or train our own model 
+For a real scenario we need to use a pretrain model like GPT models, any pretrain model in Pytorch or something similar. Or train our own model 
 but using a different CSV.
 
-Is deployed in a docker container isolated, using the cpu for process (for this light model is fine), for a heavy model, we need to use parallelism
+It's deployed in a docker container isolated, using the cpu for process (for this light model is fine). For a heavy model, we need to use parallelism
 probably using the GPU cores using CUDA.
 
-Also, for large model needs to be implemented the Dataloader to charge the data into the model for the inference. And probably isolate
-the load and charge of model in a separate class (improvements that we can do)
+Also, for large model needs to be implemented a `Dataloader` who will load the data into the model for the inference. 
+And probably isolate the load Data and charge the model in separate classes (improvements that we can do)
 
 
 ## Redis (celery_backend)
@@ -343,7 +357,8 @@ The DB to store the dataset, the result of the inference and new tickets also. B
 It was implemented a schema for the DB using the file `src/database/sql/init.sql` (check for details)
 
 The Postgres db is deployed in an Isolated container. The container is exposed in the `host-port 5432` (the postgres default one)
-and like that you can use pg-admin or Data-grip (my favorite one) to explore the DB.
+and like that you can use `pg-admin` or `Data-grip` (my favorite one) to explore the DB using the dummy credentials in `variables.env`
+in order to connect into the DB and explore with a GUI the database.
 
 
 
@@ -359,7 +374,7 @@ Basically, `/seed` are in charge to upload the dataset unto the DB. Is in charge
 
 Basically the idea was to take advantage of the distributed system that was implemented for this demo and the async tasks to improve the performance of upload data.
 
-The dataset used is relative small, but imagine something with hundred thousands or millions of rows. So, the idea was tu take advantage of the infra already setUp.
+The dataset used is relative small, but imagine something with hundred thousands or millions of rows. So, the idea was take advantage of the infra already setUp.
 
 In a prod scenario these tasks can be trigger using an SDK or CLI command in order to avoid latency issues, but fot this demo I consider is ok have this endpoint.
 
@@ -375,55 +390,65 @@ The idea of this endpoint is to check the status of the async tasks execute by t
 
 ## What about /process-ticket and POST /requests?
 
-I mentioned this before, but /process-tickets process the data from the dataset that is stored in the DB and POST /request for a new ticket.
+I mentioned this before, but `/process-tickets` is in charge to  process the data from the dataset that is stored in the DB and 
+`POST /request` in charge of process a new ticket (not present originally in the dataset).
 
 Basically I think that the data from the dataset is mainly for training, so I would need another endpoint for new data.
 
 so why two endpoint both makes similar things?
 
-Well, yes this true and probably there are some duplicate code (again, I focus mainly in architecture, this for sure needs to be refactored)
-but the idea of this was had separate responsibilities. But this could be refactored for a real application.
+Well, yes this is true and probably there are some duplicate code (again, I focus mainly in architecture, this for sure needs to be refactored)
+but the idea of this was had separate responsibilities. But this could be refactored for a real application if we think is needed.
 
 ## Why two workers isolated and two queues?
 
 The reason of this in mainly for scalability.
 
-The idea is separate the process of data process and inference process.
+The idea is separate processes in `data process` and `inference process`.
 
-The reason of this is that data process in this context is mainly I/O operations. 
+The reason of this is that `data process` in this context is mainly I/O operations (fetch in the DB, write in the DB etc.)
 
-For the inference process its true that if you use a pretrained model, probably the operation is I/O. But this is valid for light models (like here that I made a basic training for a model using scikit-learn)
-but, for large models (some of GPT for example), this operation is more CPU bound. So, in this context is worth to separate the responsibilities.
+For the `inference process` its true that if you use a pretrained model, probably the operation is I/O. 
+But this is valid for light models (like here that I made a basic training for a model using `scikit-learn`)
+but, for large models (some of GPT for example), this operation is more `CPU bound`. So, in this context is worth to separate the responsibilities.
 
 Having workers independent between them, allows to scale only the worker that you need and avoid bottlenecks.
 
-Similar thing with the queues. Having separate queues for each worker, allows to access to the metrics of the queue (like length of the queue o latency queue) and in base of them decide scale in or scale out the workers.
+Similar thing with the queues. Having separate queues for each worker, allows to access to the metrics of the queue (like `length of the queue` o `latency queue`) 
+and in base of them decide scale in or scale out the workers.
 If we use the same queue (that is viable) this scalability of the workers could be more complex.
 
 
 ## why using the same CSV for training and making predictions?
 
-If you check the demo, the inference_worker train a scikit-learn model using the hugging face CSV. and then use the same CSV to make predictions.
+If you check the demo, the `inference_worker` train a `scikit-learn` model using the hugging face CSV. and then use the same CSV to make predictions.
 
-This of course cause data leakage, is not a good practice I know. But as I mentioned before, this is just a demo and I focussed mainly in the architecture of the ML pipeline.
+This of course cause `data leakage`, and is not a good practice I know. But as I mentioned before, this is just a demo and I focussed mainly in the architecture of the ML pipeline.
 
-I could use another pretrain model but I just wanted something light for this demo.
+I could use another pretrain model, but I just wanted something light for this demo.
 
 In a real scenario we need to use a large pretrain model or train our own model but with another dataset.
 
 ## why rabbitMQ?
 
-First for practicity. Configure a RabbitMQ as message broker is much simpler that configure another broker like kafka.
+First for practicity. Configure a `RabbitMQ` as message broker is much simpler that configure another broker like `kafka`.
 
-Second, the data is mainly static, so a protocol in base of queues is really good for this. For stream data, the solution will require something similar to kafka.
+Second, the data is mainly static, so a protocol in base of queues is really good for this. For stream data, the solution will require something similar to kafka (or `AWS Kinesis`).
 But for now and for this demo this works well.
 
-Disadvantage of RabbitMQ is horizontal scalability of the queue, but for now I think is not a problem this (even in a real scenario in cloud we can use AWS SQS that scales in theory "infinite")
+Disadvantage of RabbitMQ is horizontal scalability of the queue, but for now I think is not a problem this 
+(even in a real scenario in cloud we can use `AWS SQS` that scales in theory "infinite" and AWS takes care of it)
 
 
 ## Why of this architecture?
 
-This distributed system is mainly thinking in scalability of the solution for process large datasets. The idea is scale workers when is needed.
+This distributed system is mainly thinking in scalability of the solution for process large datasets. 
+The idea is scale each worker only when is needed. Havina clear and isolated separation of the components, we can scale all of them in am
+independently way using the relevant metrics of each one.
+
+## Why an sckit-learn model?
+
+For practice and to use something light for this demo.
 
 
 # Unit-Tests
@@ -434,7 +459,7 @@ Those endpoints only were tested with success cases.
 
 In a real project needs to be tested all cases included fail cases. Also edge cases.
 
-Also, in a real scenario is needed to test basically every implementation in the application. In this case it would be needed test the celery workers
+Also, in a real scenario is needed to test basically every implementation in the application. In this case it would be needed test the `celery workers`
 with all the tasks and auxiliar functions.
 
 For sure add unit test for everything would take probably days not just 4 hours.
@@ -475,8 +500,6 @@ ticket_worker:
     env_file:
       - 'variables.env'
     environment:
-      - BUCKET_NAME=fashion-tasks
-      - DATA_FOLDER=data
       - CELERY_WORKER_CONCURRENCY=8
     links:
       - backend:backend
@@ -488,21 +511,22 @@ ticket_worker:
       - database
     networks:
       - network
-    command: celery -A worker.imagery worker -P threads --loglevel=INFO --queues=ticket_queue
+    command: celery -A worker.ticket_worker worker -P threads --loglevel=INFO --queues=ticket_queue
 ```
 
 This works good, but for an optimize solution (and also a cost-efficient) this needs to scale on base of metrics.
 
-In a real scenario, the relevant metrics for this would be `length of the queue`, `latency of the queue` and probably `memory`,
+In a real scenario, the relevant metrics for this would be `length of the queue`, `latency of the queue` and probably `memory`.
 
-In base of this metrics we decided if scale in or out.
+On base of those metrics we decided if scale in or out.
 
 ------------
 
 Similar way to inference worker. I've set up  using some values by default. But the decision to scale should be on base of
 queue metrics.
 
-Also, I'm making the inference using CPU, that for this demo is fine, since we are using a `sckit-learn`  model using CPU is fine.
+Also, I'm making the inference using CPU, that for this demo is fine, since we are using a light `sckit-learn`  model.
+
 For large models we need to use heavi parallelism using CUDA for example to take advantage te cores of the GPU.
 
 -----------------
@@ -510,7 +534,7 @@ For large models we need to use heavi parallelism using CUDA for example to take
 
 The answers for filter tickets requesting `GET http://localhost:5000/requests?category=technical`.
 
-all the records needs to be paginated to avoid overload the client.
+all the records could need to be paginated to avoid overload the client.
 
 ------------------
 
@@ -587,8 +611,10 @@ deployed in a container. Could be an independent container, or fore example in t
 ## What is missing?
 
 - Complete unit tests.
-- Deploy Alembic in docker container (could be in a dedicate container or in an existing container with DB access)
+- (Optional) Deploy Alembic in docker container (could be in a dedicate container or in an existing container with DB access)
 - Refactor code, this is a naive implementation.
+
+And probably more things.
 
 ## Code Refactor
 
@@ -612,4 +638,6 @@ again is just inject the corresponding `ABS classes` and implement them.
 
 And also if we use microservice is easier to scale them.
 
-Again, this is a bit complex to implement, but in some cases could be worth.
+Again, this is a bit complex to implement, but in some cases could be worth. However, this needs to be discussed because make a migration abd refactored
+the code follow clean architectural principles or another patterns (like MVC) could be complex and take time. If the team is small and with limited time,
+probably is not the time for this.

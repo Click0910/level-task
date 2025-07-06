@@ -94,7 +94,7 @@ def get_db_connection():
         conn.close()
 
 
-# Función principal
+# Principal function
 def fetch_unprocessed_tickets() -> List[Dict[str, Any]]:
     """
     Return tickets without process as full list,
@@ -171,32 +171,6 @@ def stream_unprocessed_tickets() -> Generator[Dict[str, Any], None, None]:
     except Exception as e:
         logger.error(f"Critical error: {str(e)}")
         raise
-
-
-def fetch_record(ticket_id: str) -> Dict[str, Any]:
-    """
-    Fetch a specific ticket in the DB
-    """
-    try:
-        query = select(tickets).where(tickets.c.ticket_id == ticket_id)
-
-        with get_db_connection() as conn:
-            result = conn.execute(query).fetchone()
-            return dict(result._mapping) if result else None
-
-    except Exception as e:
-        logger.error(f"Finding Error {ticket_id}: {str(e)}")
-        raise
-
-
-def filter_tickets_category(category: str):
-    try:
-        query = select(tickets).where(tickets.c.predicted_category == category)
-        with get_db_connection() as conn:
-            results = conn.execute(query).fetchall()
-            return [dict(row._mapping) for row in results]
-    except Exception as e:
-        raise e
 
 
 def save_new_ticket(payload: dict) -> dict:
